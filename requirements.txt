@@ -1,0 +1,13 @@
+streamlit
+pandas
+numpy
+scikit-learn
+xgboost
+joblib
+countries
+
+
+# Optional plotting libs (not required for prediction):
+# plotly
+# matplotlib
+# seaborn
