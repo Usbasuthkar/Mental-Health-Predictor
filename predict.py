@@ -289,6 +289,10 @@ import os
 import json
 import joblib
 import numpy as np
+from langchain_groq import ChatGroq
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
+import json
 import random
 import pandas as pd
 import copy
@@ -301,6 +305,51 @@ label_encoders = joblib.load(os.path.join(ARTIFACT_DIR, "label_encoders.pkl"))
 with open(os.path.join(ARTIFACT_DIR, "defaults.json")) as f:
     defaults = json.load(f)
 
+llm = ChatGroq(
+    model_name="llama-3.3-70b-versatile",
+    temperature=0,
+    api_key=os.getenv("GROQ_API_KEY")
+)
+# parser = JsonOutputParser(pydantic_object={
+#     "type":"object",
+#     "user_details":{
+#         "family_history":{"type":"boolean"},
+#         "work_interfere_text":{"type":"boolean"},
+#         "benefits_text":{"type":"boolean"},
+#         "care_options_text":{"type":"boolean"},
+#         "wellness_text":{"type":"boolean"},
+#     }
+# })
+parser = JsonOutputParser()
+pre_prompt = ChatPromptTemplate.from_messages([
+    ("system", """Return ONLY valid JSON.
+
+Convert input JSON into:
+{{
+  "family_history": "Yes or No",
+  "work_interfere": "Yes or No",
+  "benefits": "Yes or No",
+  "care_options": "Yes or No",
+  "wellness": "Yes or No"
+}}
+"""),
+    ("human", "JSON:{user_details}"),
+])
+
+post_prompt = ChatPromptTemplate.from_messages([
+    ("system","""
+     You are a psychiatrist helping an employee. 
+     Based on the given JSON data and a 
+     prediction of high risk for mental health issues, 
+     provide a practical suggestion to improve mental well-being. 
+     MAX 50 words.
+      """),
+    ("human","JSON:{user_details}, prediction:{value}"),
+])
+
+pre_processing_chain  = pre_prompt | llm | parser
+post_processing_chain = post_prompt | llm
+
 FEATURES = [
     "age","gender","family_history","no_employees",
     "work_interfere","has_benefits","has_care_options",
@@ -310,53 +359,32 @@ FEATURES = [
 # ─────────────────────────────────────────────
 # TEXT INFERENCE
 # ─────────────────────────────────────────────
-
-def infer_binary(text):
-    if not text:
-        return 0
-    s = text.lower()
-    positive = ["yes","have","available","provided","offer","eap","counsellor"]
-    negative = ["no","none","not","nothing","never","don't","unclear"]
-    pos = sum(w in s for w in positive)
-    neg = sum(w in s for w in negative)
-    return 1 if pos > neg else 0
-
-def infer_work_interference(text):
-    if not text:
-        return "Never"
-    s = text.lower()
-    if any(w in s for w in ["often","frequent","constant"]):
-        return "Often"
-    if any(w in s for w in ["sometimes","occasionally","periodically"]):
-        return "Sometimes"
-    if any(w in s for w in ["rarely"]):
-        return "Rarely"
-    return "Never"
-
-def infer_family(text):
-    if not text:
-        return "No"
-    s = text.lower()
-    keywords = ["depression","anxiety","bipolar","ptsd","suicide","schizophrenia"]
-    return "Yes" if any(k in s for k in keywords) else "No"
-
+def infer(user):
+    result = pre_processing_chain.invoke({"user_details": user})
+    return result
 # ─────────────────────────────────────────────
 # PREPROCESS
 # ─────────────────────────────────────────────
+def yes_no_to_int(val):
+    return 1 if str(val).strip().lower() == "yes" else 0
 
 def preprocess_user_details(user):
     row = {}
-
     row["age"] = float(user.get("age",0))
     row["gender"] = str(user.get("gender","Other")).title()
-    row["family_history"] = infer_family(user.get("family_history_text"))
     row["no_employees"] = str(user.get("no_employees","1-5")).title()
-    row["work_interfere"] = infer_work_interference(user.get("work_interfere_text"))
-
-    row["has_benefits"] = infer_binary(user.get("benefits_text"))
-    row["has_care_options"] = infer_binary(user.get("care_options_text"))
-    row["has_wellness_program"] = infer_binary(user.get("wellness_text"))
     row["support_score"] = float(user.get("support_score",3))
+
+    exclude_keys = {"age", "gender", "no_employees", "support_score"}
+    infer_input = {k: v for k, v in user.items() if k not in exclude_keys}
+    result = infer(infer_input)
+
+    row["family_history"] = yes_no_to_int(result.get("family_history"))
+    row["work_interfere"] = yes_no_to_int(result.get("work_interfere"))
+
+    row["has_benefits"] = yes_no_to_int(result.get("benefits"))
+    row["has_care_options"] = yes_no_to_int(result.get("care_options"))
+    row["has_wellness_program"] = yes_no_to_int(result.get("wellness"))
 
     df = pd.DataFrame([row], columns=FEATURES)
 
@@ -378,63 +406,9 @@ def preprocess_user_details(user):
 def generate_suggestions(user, p):
 
     suggestions = []
-    text_blob = " ".join([
-        user.get("family_history_text",""),
-        user.get("work_interfere_text",""),
-        user.get("benefits_text",""),
-        user.get("care_options_text",""),
-        user.get("wellness_text",""),
-    ]).lower()
-
-    high = p >= 70
-    moderate = 45 <= p < 70
-    low = p < 45
-
-    work_flag = infer_work_interference(user.get("work_interfere_text")) in ["Often","Sometimes"]
-    no_benefits = infer_binary(user.get("benefits_text")) == 0
-    no_wellness = infer_binary(user.get("wellness_text")) == 0
-    family_flag = infer_family(user.get("family_history_text")) == "Yes"
-    low_support = float(user.get("support_score",3)) <= 2
-
-    if high and low_support:
-        suggestions.append("🔴 High risk combined with low support suggests structured professional help may be critical.")
-
-    if high and work_flag:
-        suggestions.append("🔴 Elevated risk with work strain detected — workplace adjustments could reduce escalation.")
-
-    if moderate and family_flag:
-        suggestions.append("🧬 Family vulnerability + moderate profile — preventative therapy could reduce long-term risk.")
-
-    if no_benefits and low_support:
-        suggestions.append("⚠️ Limited workplace and personal support — external support options are especially important.")
-
-    if high and no_benefits and no_wellness:
-        suggestions.append("🚨 Multi-factor vulnerability detected — proactive intervention strongly recommended.")
-
-    burnout_words = ["burnout","exhausted","overwhelmed","drained","hopeless"]
-    if any(w in text_blob for w in burnout_words):
-        suggestions.append("🔥 Language indicates burnout signals — recovery planning and rest cycles may help.")
-
-    if low:
-        suggestions.append("🟢 Maintain protective habits — regular sleep, movement, and social connection reinforce resilience.")
-
-    if moderate:
-        suggestions.append("🟡 Mid-range risk suggests preventative action now could shift long-term trajectory.")
-
-    if high:
-        suggestions.append("🔴 Profile resembles high treatment-seeking groups in dataset.")
-
-    if family_flag:
-        suggestions.append("🧬 Family history awareness allows early monitoring and protective behaviour.")
-
-    if work_flag:
-        suggestions.append("💼 Work interference signals strain — structured coping tools may reduce daily stress.")
-
-    if low_support:
-        suggestions.append("🤝 Expanding support network could significantly buffer long-term vulnerability.")
-
-    random.shuffle(suggestions)
-    return suggestions[:8]  # return up to 8 strong suggestions
+    result = post_processing_chain.invoke({"user_details":user,"value":p})
+    suggestions.append(result.content)
+    return suggestions
 
 # ─────────────────────────────────────────────
 # PREDICT

@@ -11,6 +11,8 @@ import os
 import json
 import joblib
 import numpy as np
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import AdaBoostClassifier
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
@@ -82,9 +84,8 @@ X_train, X_test, y_train, y_test = train_test_split(
 candidates = {
     "LogisticRegression": LogisticRegression(random_state=42, max_iter=1000),
     "RandomForest":       RandomForestClassifier(random_state=42, n_estimators=200, n_jobs=-1),
+    "AdaBoost": AdaBoostClassifier(base_estimator=DecisionTreeClassifier(max_depth=2),n_estimators=300,learning_rate=0.3,random_state=42),
 }
-if HAS_XGB:
-    candidates["XGBoost"] = XGBClassifier(eval_metric="logloss", random_state=42, n_jobs=-1)
 
 results = {}
 for name, model in candidates.items():
