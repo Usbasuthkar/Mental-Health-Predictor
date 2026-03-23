@@ -296,7 +296,9 @@ import json
 import random
 import pandas as pd
 import copy
+from dotenv import load_dotenv
 
+load_dotenv()
 ARTIFACT_DIR = "artifacts"
 model = joblib.load(os.path.join(ARTIFACT_DIR, "model.pkl"))
 scaler = joblib.load(os.path.join(ARTIFACT_DIR, "scaler.pkl"))
