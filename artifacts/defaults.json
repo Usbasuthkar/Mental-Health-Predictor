@@ -1,7 +1,7 @@
 {
   "support_score_mean": 0.8589826142949131,
   "latest_year": "2023",
-  "best_model_name": "XGBoost",
-  "best_auc": 0.7949,
+  "best_model_name": "AdaBoost",
+  "best_auc": 0.8153,
   "total_rows": 4659
 }

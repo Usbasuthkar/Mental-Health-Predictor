@@ -9,6 +9,7 @@ Requirements: pip install scikit-learn xgboost joblib pandas numpy
 
 import os
 import json
+from sklearn.metrics import confusion_matrix
 import joblib
 import numpy as np
 from sklearn.tree import DecisionTreeClassifier
@@ -43,8 +44,20 @@ print(f"  Rows: {len(df)}  |  Columns: {list(df.columns)}")
 
 # ── Feature set ────────────────────────────────────────────────────────────
 FEATURES = [
-    "age", "gender", "family_history", "no_employees", "work_interfere",
-    "has_benefits", "has_care_options", "has_wellness_program", "support_score",
+    "age",
+    "gender",
+    "country",
+    "self_employed",
+    "family_history",
+    "no_employees",
+    "work_interfere",
+    "has_benefits",
+    "has_care_options",
+    "has_wellness_program",
+    "seek_help",
+    "anonymity",
+    "leave",
+    "support_score"
 ]
 TARGET = "treatment_encoded"
 
@@ -59,7 +72,17 @@ X = df[FEATURES].copy()
 y = df[TARGET].astype(int).copy()
 
 # ── Standardise categorical strings (CSV uses mixed case) ──────────────────
-CAT_COLS = ["gender", "family_history", "no_employees", "work_interfere"]
+CAT_COLS = [
+    "gender",
+    "country",
+    "self_employed",
+    "family_history",
+    "no_employees",
+    "work_interfere",
+    "seek_help",
+    "anonymity",
+    "leave"
+]
 for col in CAT_COLS:
     X[col] = X[col].astype(str).str.strip().str.title()
 
@@ -84,7 +107,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 candidates = {
     "LogisticRegression": LogisticRegression(random_state=42, max_iter=1000),
     "RandomForest":       RandomForestClassifier(random_state=42, n_estimators=200, n_jobs=-1),
-    "AdaBoost": AdaBoostClassifier(base_estimator=DecisionTreeClassifier(max_depth=2),n_estimators=300,learning_rate=0.3,random_state=42),
+    "AdaBoost": AdaBoostClassifier(estimator=DecisionTreeClassifier(max_depth=2),n_estimators=300,learning_rate=0.3,random_state=42),
 }
 
 results = {}
@@ -99,7 +122,15 @@ for name, model in candidates.items():
 best_name  = max(results, key=lambda n: results[n]["auc"])
 best_model = results[best_name]["model"]
 print(f"\nBest model: {best_name}  (AUC = {results[best_name]['auc']:.4f})")
+from sklearn.metrics import confusion_matrix
 
+# Predictions on test set
+y_pred = best_model.predict(X_test)
+
+cm = confusion_matrix(y_test, y_pred)
+
+# Save
+np.save("artifacts/confusion_matrix.npy", cm)
 # ── Reference probability distributions ───────────────────────────────────
 all_probas = best_model.predict_proba(X_scaled)[:, 1].tolist()
 
