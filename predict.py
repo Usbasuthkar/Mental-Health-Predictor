@@ -33,15 +33,14 @@ pre_prompt = ChatPromptTemplate.from_messages([
 Convert input JSON into:
 {
   "family_history": "Yes or No",
-  "work_interfere": "Yes or No",
-  "benefits": "Yes or No",
-  "care_options": "Yes or No",
-  "wellness": "Yes or No",
+  "work_interfere": "Never / Rarely / Sometimes / Often / Unknown",
+  "benefits": "Yes / No / Don't Know",
+  "care_options": "Yes / No / Not Sure",
+  "wellness": "Yes / No / Don't Know",
   "self_employed": "Yes or No",
-  "tech_company": "Yes or No",
-  "seek_help": "Yes or No",
-  "anonymity": "Yes or No",
-  "leave": "Very easy / Somewhat easy / Difficult / Very difficult / Don't know"
+  "seek_help": "Yes / No / Don't Know",
+  "anonymity": "Yes / No / Don't Know",
+  "leave": "Very Easy / Somewhat Easy / Somewhat Difficult / Very Difficult / Don't Know"
 }
 """),
     ("human", "JSON:{user_details}"),
@@ -98,17 +97,24 @@ def preprocess_user_details(user):
     row["country"] = str(user.get("country", "Other")).title()
 
     exclude_keys = {"age", "gender", "no_employees", "support_score"}
-    infer_input = {k: v for k, v in user.items() if k not in exclude_keys}
+    infer_input = {
+        "family_history": user.get("family_history_text", ""),
+        "work_interfere": user.get("work_interfere_text", ""),
+        "benefits": user.get("benefits_text", ""),
+        "care_options": user.get("care_options_text", ""),
+        "wellness": user.get("wellness_text", ""),
+        "self_employed": user.get("self_employed_text", ""),
+        "seek_help": user.get("seek_help_text", ""),
+        "anonymity": user.get("anonymity_text", ""),
+        "leave": user.get("leave_text", "")
+    }
     result = infer(infer_input)
-    row["self_employed"] = yes_no_to_int(result.get("self_employed"))
-
-    row["seek_help"] = yes_no_to_int(result.get("seek_help"))
-    row["anonymity"] = yes_no_to_int(result.get("anonymity"))
-
-    row["leave"] = str(result.get("leave", "Don't know")).title()
-    row["family_history"] = yes_no_to_int(result.get("family_history"))
-    row["work_interfere"] = yes_no_to_int(result.get("work_interfere"))
-
+    row["self_employed"] = result.get("self_employed", "No").title()
+    row["leave"] = result.get("leave", "Don't Know").title()
+    row["family_history"] = result.get("family_history", "No").title()
+    row["work_interfere"] = result.get("work_interfere", "No").title()
+    row["seek_help"] = result.get("seek_help", "No").title()
+    row["anonymity"] = result.get("anonymity", "No").title()
     row["has_benefits"] = yes_no_to_int(result.get("benefits"))
     row["has_care_options"] = yes_no_to_int(result.get("care_options"))
     row["has_wellness_program"] = yes_no_to_int(result.get("wellness"))

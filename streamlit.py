@@ -196,7 +196,7 @@ if submitted:
     user_details = {
         "age": age,
         "gender": gender_text,
-        "country_text": country_text,
+        "country": country_text,
         "self_employed_text": self_employed_text,
         "family_history_text": family_history_text,
         "no_employees": no_employees,
